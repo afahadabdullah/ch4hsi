@@ -47,7 +47,7 @@ case "$(uname -m)" in
     ;;
   *)
     # x86 architecture (e.g. 2x V100, 20 CPU cores, 380GB RAM on Prism)
-    export GPU_PARTITION="${GPU_PARTITION:-v100}"
+    export GPU_PARTITION="${GPU_PARTITION:-${SLURM_JOB_PARTITION:-gpu}}"
     export CPU_PARTITION="${CPU_PARTITION:-compute}"
     export CH4HSI_CONFIG="${CH4HSI_CONFIG:-${CH4HSI_REPO}/configs/x86_v100.yaml}"
     export TRAIN_GPUS="${TRAIN_GPUS:-2}"
@@ -71,9 +71,13 @@ ch4hsi_env_prefix() {
 
 # stage -> sbatch resource flags (single source of truth for submit_all.sh / submit_stage.sh)
 stage_resources() {
-  local cpu="--partition=${CPU_PARTITION} --nodes=1 --ntasks=1"
-  local gpu="--partition=${GPU_PARTITION} --nodes=1 --ntasks=1 --gpus=1"
-  local gpu_train="--partition=${GPU_PARTITION} --nodes=1 --ntasks=1 --gpus=${TRAIN_GPUS}"
+  local cpu_part=""
+  local gpu_part=""
+  [ -n "${CPU_PARTITION:-}" ] && [ "${CPU_PARTITION}" != "none" ] && cpu_part="--partition=${CPU_PARTITION}"
+  [ -n "${GPU_PARTITION:-}" ] && [ "${GPU_PARTITION}" != "none" ] && gpu_part="--partition=${GPU_PARTITION}"
+  local cpu="${cpu_part} --nodes=1 --ntasks=1"
+  local gpu="${gpu_part} --nodes=1 --ntasks=1 --gpus=1"
+  local gpu_train="${gpu_part} --nodes=1 --ntasks=1 --gpus=${TRAIN_GPUS}"
   case "$1" in
     setup-env)      echo "${gpu} --cpus-per-task=8  --mem=32G  --time=02:00:00" ;;
     preflight)      echo "${cpu} --cpus-per-task=1  --mem=4G   --time=00:10:00" ;;

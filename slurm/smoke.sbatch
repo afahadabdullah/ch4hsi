@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ch4-smoke
 #SBATCH --output=logs/%x-%j.out
-#SBATCH --partition=v100
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=8
 #SBATCH --gpus=1
 #SBATCH --mem=64G
