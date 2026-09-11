@@ -1,0 +1,18 @@
+# x86 cluster configuration: 2x NVIDIA V100 (16GB/32GB), 20 CPU Cores, 380GB RAM.
+# Layered over configs/default.yaml.
+
+train:
+  batch_size: 64          # 32 tiles per V100 across 2 GPUs (DataParallel)
+  lr: 1.5e-3              # scaled for batch 64
+  warmup_epochs: 2
+  tiles_per_epoch: 12000  # balanced for 2x V100 throughput (~25-30s per epoch)
+  val_tiles: 3000
+  num_workers: 8          # leaves 12 CPU cores free for system/OS and background caching
+  amp: fp16               # V100 Volta natively accelerates FP16 with GradScaler (no hardware bf16)
+  early_stop_patience: 12
+  stage_to_local: false   # 380GB host RAM fully caches dataset in OS page cache; local staging optional
+
+eval:
+  infer_tile: 256         # tile size suited for V100 memory
+  infer_stride: 192
+  batch: 32

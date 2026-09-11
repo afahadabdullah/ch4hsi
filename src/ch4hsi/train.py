@@ -111,7 +111,14 @@ def run(cfg: Cfg):
     dl_kw = dict(batch_size=tc.batch_size, num_workers=nw, pin_memory=device.type == "cuda")
     dl_va = DataLoader(ds_va, shuffle=False, persistent_workers=nw > 0, **dl_kw)
 
-    model = build_model(tc, len(norm["mean"])).to(device).to(memory_format=torch.channels_last)
+    raw_model = build_model(tc, len(norm["mean"])).to(device).to(memory_format=torch.channels_last)
+    n_gpus = torch.cuda.device_count() if device.type == "cuda" else 0
+    if n_gpus > 1:
+        gpu_names = ", ".join(torch.cuda.get_device_name(i) for i in range(n_gpus))
+        log.info("multi-GPU enabled: using DataParallel across %d GPUs (%s)", n_gpus, gpu_names)
+        model = torch.nn.DataParallel(raw_model)
+    else:
+        model = raw_model
     opt = torch.optim.AdamW(model.parameters(), lr=tc.lr, weight_decay=tc.weight_decay)
     try:
         scaler = torch.amp.GradScaler("cuda", enabled=adt == torch.float16)
@@ -122,12 +129,12 @@ def run(cfg: Cfg):
     last = out / "last.pt"
     if last.exists():  # resume after preemption / time limit
         ck = torch.load(last, map_location=device, weights_only=False)
-        model.load_state_dict(ck["model"])
+        raw_model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["opt"])
         scaler.load_state_dict(ck["scaler"])
         start, best, bad, hist = ck["epoch"] + 1, ck["best"], ck["bad"], ck["hist"]
         log.info("resumed from epoch %d (best val AP %.4f)", start, best)
-    log.info("device=%s amp=%s workers=%d params=%.2fM", device, adt, nw, sum(p.numel() for p in model.parameters()) / 1e6)
+    log.info("device=%s (gpus=%d) amp=%s workers=%d params=%.2fM", device, n_gpus, adt, nw, sum(p.numel() for p in raw_model.parameters()) / 1e6)
 
     steps = len(ds_tr) // tc.batch_size
     for epoch in range(start, tc.epochs):
@@ -146,7 +153,7 @@ def run(cfg: Cfg):
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+            torch.nn.utils.clip_grad_norm_(raw_model.parameters(), 5.0)
             scaler.step(opt)
             scaler.update()
             run_loss += float(loss)
@@ -157,10 +164,10 @@ def run(cfg: Cfg):
         improved = vm["val_ap"] > best
         if improved:
             best, bad = vm["val_ap"], 0
-            torch.save(dict(model=model.state_dict(), epoch=epoch, val=vm, in_ch=len(norm["mean"])), out / "best.pt")
+            torch.save(dict(model=raw_model.state_dict(), epoch=epoch, val=vm, in_ch=len(norm["mean"])), out / "best.pt")
         else:
             bad += 1
-        torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), scaler=scaler.state_dict(), epoch=epoch,
+        torch.save(dict(model=raw_model.state_dict(), opt=opt.state_dict(), scaler=scaler.state_dict(), epoch=epoch,
                         best=best, bad=bad, hist=hist), last)
         pd.DataFrame(hist).to_csv(out / "history.csv", index=False)
         log.info("ep %3d | loss %.4f | val AP %.4f F1 %.3f (P %.3f R %.3f) | %.0fs %s", epoch, rec["train_loss"],

@@ -17,9 +17,18 @@ HPC_DIR="${CH4HSI_HPC_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}/slurm}"
 [ -f "${HPC_DIR}/common.sh" ] || { echo "FATAL: common.sh not found (submit from the repo root)" >&2; exit 2; }
 source "${HPC_DIR}/common.sh"
 
-case "$(uname -m)" in aarch64|arm64) ;; *) echo "FATAL: run this on a grace (aarch64) node, got $(uname -m)" >&2; exit 2;; esac
-TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}"   # aarch64 (sbsa) CUDA wheels, sm_90
-prefix="${CH4HSI_ENV_AARCH64}"
+case "$(uname -m)" in
+  aarch64|arm64)
+    TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}"   # aarch64 (sbsa) CUDA wheels
+    prefix="${CH4HSI_ENV_AARCH64}"
+    ;;
+  *)
+    # x86_64 (e.g. V100, A100, RTX, etc.)
+    TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu121}"   # x86_64 CUDA wheels
+    prefix="${CH4HSI_ENV_X86_64}"
+    ;;
+esac
+
 export CONDA_PKGS_DIRS="${CH4HSI_DATA}/.cache/conda" PIP_CACHE_DIR="${CH4HSI_DATA}/.cache/pip"
 export PYTHONNOUSERSITE=1
 unset PYTHONHOME PYTHONPATH
@@ -35,7 +44,9 @@ import torch, numpy, scipy, pandas, rasterio, netCDF4, h5py, pyproj, earthaccess
 from ch4hsi.physics.target import load_lut
 assert torch.cuda.is_available(), "torch built without usable CUDA on this node"
 wl, rads, _ = load_lut("mag1c")
-print(f"OK torch {torch.__version__} cuda {torch.version.cuda} on {torch.cuda.get_device_name(0)}; "
+n_g = torch.cuda.device_count()
+devs = [torch.cuda.get_device_name(i) for i in range(n_g)]
+print(f"OK torch {torch.__version__} cuda {torch.version.cuda} ({n_g} GPUs: {devs}); "
       f"bf16={torch.cuda.is_bf16_supported()}; LUT {rads.shape}")
 EOF
 }
@@ -47,7 +58,7 @@ ensure_directory "$(dirname "${prefix}")"
     echo "environment already complete: ${prefix}"; exit 0
   fi
   if [ ! -x "${prefix}/bin/python" ]; then
-    echo "Creating one-time aarch64 environment: ${prefix}"
+    echo "Creating one-time $(uname -m) environment: ${prefix}"
     conda create --yes --prefix "${prefix}" python=3.11 pip
   fi
   conda env update --yes --prefix "${prefix}" --file "${CH4HSI_REPO}/environment.yml"

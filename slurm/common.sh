@@ -35,16 +35,31 @@ ensure_directory "${CH4HSI_DATA}"
 ensure_directory "${CH4HSI_REPO}/logs"
 
 # ---------------------------------------------------------------- partitions / resources
-# Everything defaults to the GH200 `grace` partition so one aarch64 environment serves all stages.
-# CPU-only stages request no GPU. Alternatives: CPU_PARTITION=grace-cpuonly (Grace CPU nodes, same
-# arch) or CPU_PARTITION=compute (x86; needs the x86 env from setup_login_env.sh, no torch required).
-export GPU_PARTITION="${GPU_PARTITION:-grace}"
-export CPU_PARTITION="${CPU_PARTITION:-grace}"
-export CH4HSI_CONFIG="${CH4HSI_CONFIG:-${CH4HSI_REPO}/configs/gh200.yaml}"
+# Default partition & resource selection keyed by host architecture or user override in site.env:
+case "$(uname -m)" in
+  aarch64|arm64)
+    export GPU_PARTITION="${GPU_PARTITION:-grace}"
+    export CPU_PARTITION="${CPU_PARTITION:-grace}"
+    export CH4HSI_CONFIG="${CH4HSI_CONFIG:-${CH4HSI_REPO}/configs/gh200.yaml}"
+    export TRAIN_GPUS="${TRAIN_GPUS:-1}"
+    export TRAIN_CPUS="${TRAIN_CPUS:-32}"
+    export TRAIN_MEM="${TRAIN_MEM:-240G}"
+    ;;
+  *)
+    # x86 architecture (e.g. 2x V100, 20 CPU cores, 380GB RAM)
+    export GPU_PARTITION="${GPU_PARTITION:-gpu}"
+    export CPU_PARTITION="${CPU_PARTITION:-compute}"
+    export CH4HSI_CONFIG="${CH4HSI_CONFIG:-${CH4HSI_REPO}/configs/x86_v100.yaml}"
+    export TRAIN_GPUS="${TRAIN_GPUS:-2}"
+    export TRAIN_CPUS="${TRAIN_CPUS:-20}"
+    export TRAIN_MEM="${TRAIN_MEM:-380G}"
+    ;;
+esac
+
 export DOWNLOAD_TASKS="${DOWNLOAD_TASKS:-8}" DOWNLOAD_CONCURRENCY="${DOWNLOAD_CONCURRENCY:-4}"
 export PREPROCESS_TASKS="${PREPROCESS_TASKS:-16}" MDL_TASKS="${MDL_TASKS:-4}"
 
-# Environments are keyed by architecture (aarch64 on grace nodes, x86_64 on gpulogin1/compute).
+# Environments are keyed by architecture (aarch64 or x86_64).
 export CH4HSI_ENV_AARCH64="${CH4HSI_ENV_AARCH64:-${CH4HSI_DATA}/.envs/ch4hsi-aarch64}"
 export CH4HSI_ENV_X86_64="${CH4HSI_ENV_X86_64:-${CH4HSI_DATA}/.envs/ch4hsi-x86_64}"
 ch4hsi_env_prefix() {
@@ -58,6 +73,7 @@ ch4hsi_env_prefix() {
 stage_resources() {
   local cpu="--partition=${CPU_PARTITION} --nodes=1 --ntasks=1"
   local gpu="--partition=${GPU_PARTITION} --nodes=1 --ntasks=1 --gpus=1"
+  local gpu_train="--partition=${GPU_PARTITION} --nodes=1 --ntasks=1 --gpus=${TRAIN_GPUS}"
   case "$1" in
     setup-env)      echo "${gpu} --cpus-per-task=8  --mem=32G  --time=02:00:00" ;;
     preflight)      echo "${cpu} --cpus-per-task=1  --mem=4G   --time=00:10:00" ;;
@@ -66,7 +82,7 @@ stage_resources() {
     download)       echo "${cpu} --cpus-per-task=4  --mem=8G   --time=12:00:00 --array=0-$((DOWNLOAD_TASKS-1))%${DOWNLOAD_CONCURRENCY}" ;;
     preprocess)     echo "${cpu} --cpus-per-task=8  --mem=48G  --time=10:00:00 --array=0-$((PREPROCESS_TASKS-1))" ;;
     split)          echo "${cpu} --cpus-per-task=8  --mem=64G  --time=01:00:00" ;;
-    train)          echo "${gpu} --cpus-per-task=32 --mem=240G --time=1-00:00:00 --requeue" ;;
+    train)          echo "${gpu_train} --cpus-per-task=${TRAIN_CPUS} --mem=${TRAIN_MEM} --time=1-00:00:00 --requeue" ;;
     evaluate)       echo "${gpu} --cpus-per-task=16 --mem=160G --time=06:00:00" ;;
     mdl)            echo "${gpu} --cpus-per-task=16 --mem=160G --time=12:00:00 --array=0-$((MDL_TASKS-1))" ;;
     diagnose)       echo "${gpu} --cpus-per-task=8  --mem=96G  --time=02:00:00" ;;

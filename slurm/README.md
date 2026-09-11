@@ -1,29 +1,26 @@
-# NCCS Prism jobs (GH200 / `grace` partition)
+# HPC Cloud jobs (x86 2× V100 or GH200)
 
-Conventions follow the StormGrid `scripts/hpc` setup: PanFS data root, `miniforge` module, no `--account`
-(Prism resolves your Grace allocation), `--chdir`/`--export` passed explicitly, a network preflight before
-any download, `PYTHONNOUSERSITE=1` + explicit PROJ data, flock-serialised one-time env creation, and
-idempotent / resumable stages.
+Conventions follow standard HPC setup: PanFS data root, `miniforge` module, explicit `--chdir`/`--export`,
+a network preflight before downloads, `PYTHONNOUSERSITE=1` + explicit PROJ data, flock-serialised one-time env
+creation, and idempotent / resumable stages. Multi-GPU training is natively supported via `DataParallel`.
 
-| | |
-|---|---|
-| Node | 1× NVIDIA GH200 (H100 96 GB) · 72-core Grace CPU (**aarch64**) · 480 GB RAM · 1 TB `/lscratch` |
-| Data root | `/panfs/ccds02/nobackup/people/$USER/ch4hsi` (fallback `/explore/nobackup/people/$USER/ch4hsi`) |
-| Envs | `$CH4HSI_DATA/.envs/ch4hsi-aarch64` (built *on a grace node* by `00_setup_env.sbatch`, torch cu128) · optional `ch4hsi-x86_64` for gpulogin1 downloads |
-| Config | `configs/gh200.yaml` layered over `configs/default.yaml` (batch 96, bf16, 24 loader workers, 512-px inference tiles) |
+| Architecture | Node Resources | Envs & Configs |
+|---|---|---|
+| **x86 (Default on x86_64)** | 2× NVIDIA V100 (16/32 GB) · 20 CPU cores · 380 GB RAM | `$CH4HSI_DATA/.envs/ch4hsi-x86_64` · `configs/x86_v100.yaml` (FP16, batch 64, 8 workers) |
+| **GH200 (`grace` partition)** | 1× NVIDIA GH200 (96 GB) · 72 Grace cores (aarch64) · 480 GB RAM | `$CH4HSI_DATA/.envs/ch4hsi-aarch64` · `configs/gh200.yaml` (BF16, batch 96, 24 workers) |
 
-## Run (bash; Prism's default login shell is tcsh)
+## Run (bash)
 
 ```bash
 cd ~/ch4hsi
 bash slurm/submit_all.sh                     # setup-env → preflight → labels → scenes → download → preprocess
-                                             #   → split → train → evaluate → mdl → mdl-fit → diagnose → report
+                                             #   → split → train (2x V100) → evaluate → mdl → mdl-fit → diagnose → report
 sbatch slurm/smoke.sbatch                    # synthetic end-to-end test (after setup-env has finished once)
 bash slurm/submit_stage.sh train             # one stage with its standard resources
 bash slurm/submit_all.sh --from preprocess   # resume the chain from any stage
 ```
 
-If `01_preflight` fails on egress, build the x86 env and download from the login node, then continue:
+If compute nodes lack outbound internet egress, build the x86 env and download from the login node, then continue:
 
 ```bash
 bash slurm/setup_login_env.sh
@@ -31,8 +28,8 @@ tmux new -s ch4dl 'bash slurm/download_on_login.sh'
 bash slurm/submit_all.sh --from preprocess
 ```
 
-Interactive work on a GH200 from tcsh:
-`srun -p grace --gpus=1 -c 16 --mem=64G -t 2:00:00 --pty tcsh` → `source slurm/activate.csh`.
+Interactive work on a GPU node:
+`srun -p $GPU_PARTITION --gpus=2 -c 20 --mem=380G -t 2:00:00 --pty bash` → `source slurm/common.sh && ch4hsi_activate`.
 
 ## Resources (edit `stage_resources` in `common.sh`)
 

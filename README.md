@@ -10,7 +10,7 @@ synthetic plume injection. Built to run end-to-end on **HPC cloud** with Slurm. 
 EMIT-format data (no real scenes are in the repo yet) with the pixel logistic-regression baseline standing
 in for the U-Net; regenerate it from a real run with `scripts/make_readme_figures.py` (see [Figures](#figures)).*
 
-## Quick start on HPC cloud (GH200 `grace` nodes)
+## Quick start on HPC cloud (x86 2× V100 or GH200 nodes)
 
 ```bash
 git clone <your-repo> ~/ch4hsi && cd ~/ch4hsi
@@ -18,13 +18,13 @@ git clone <your-repo> ~/ch4hsi && cd ~/ch4hsi
 # Earthdata credentials (https://urs.earthdata.nasa.gov) for LP DAAC downloads
 echo "machine urs.earthdata.nasa.gov login <USER> password <PASS>" >> ~/.netrc && chmod 600 ~/.netrc
 
-bash slurm/submit_all.sh            # builds the aarch64 env on a GH200, preflights egress, then runs every stage
+bash slurm/submit_all.sh            # builds env for your architecture, preflights egress, then runs every stage
 sbatch slurm/smoke.sbatch           # optional: synthetic end-to-end test once the env exists
 ```
 
-Defaults: data under `/panfs/ccds02/nobackup/people/$USER/ch4hsi`, all jobs on partition `grace`, no account
-flag, `configs/gh200.yaml`. Overrides go in `slurm/site.env` (see `slurm/site.env.example`); details, resource
-table and the login-node download fallback are in [slurm/README.md](slurm/README.md).
+Defaults: auto-detects host architecture (`x86_64` uses `configs/x86_v100.yaml` across 2× V100s; `aarch64` uses
+`configs/gh200.yaml`). Overrides go in `slurm/site.env` (see `slurm/site.env.example`); details and resource
+tables are in [slurm/README.md](slurm/README.md).
 
 Results land in `$CH4HSI_DATA/runs/<run_name>/`: `REPORT.md` (tables, figures, auto-filled resume bullets),
 `metrics_test.json` (with 90% scene-bootstrap CIs), `mdl.json`, `per_scene_test.csv`, `per_plume_test.csv`,
