@@ -12,9 +12,22 @@
 # Idempotent and flock-serialised; submit_all.sh runs it first and skips work if the env
 # already imports torch with CUDA. Submit from the repo root:  sbatch slurm/00_setup_env.sbatch
 set -euo pipefail
-HPC_DIR="${CH4HSI_HPC_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}/slurm}"
-[ -f "${HPC_DIR}/common.sh" ] || HPC_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
-[ -f "${HPC_DIR}/common.sh" ] || { echo "FATAL: common.sh not found (submit from the repo root)" >&2; exit 2; }
+if [ -n "${CH4HSI_HPC_DIR:-}" ] && [ -f "${CH4HSI_HPC_DIR}/common.sh" ]; then
+  HPC_DIR="${CH4HSI_HPC_DIR}"
+elif [ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/common.sh" ]; then
+  HPC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+elif [ -f "${PWD}/slurm/common.sh" ]; then
+  HPC_DIR="${PWD}/slurm"
+elif [ -f "${PWD}/common.sh" ]; then
+  HPC_DIR="${PWD}"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/slurm/common.sh" ]; then
+  HPC_DIR="${SLURM_SUBMIT_DIR}/slurm"
+elif [ -n "${SLURM_SUBMIT_DIR:-}" ] && [ -f "${SLURM_SUBMIT_DIR}/common.sh" ]; then
+  HPC_DIR="${SLURM_SUBMIT_DIR}"
+else
+  echo "FATAL: common.sh not found. Run from the ch4hsi repository root." >&2
+  exit 2
+fi
 source "${HPC_DIR}/common.sh"
 
 case "$(uname -m)" in

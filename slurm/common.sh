@@ -164,6 +164,6 @@ require_egress() {
   echo "   reachable: ${url}"
 }
 
-echo "== $(date -Is) host=$(hostname) arch=$(uname -m) job=${SLURM_JOB_ID:-none} task=${SLURM_ARRAY_TASK_ID:-none} =="
+echo "== $(date +"%Y-%m-%dT%H:%M:%S%z") host=$(hostname) arch=$(uname -m) job=${SLURM_JOB_ID:-none} task=${SLURM_ARRAY_TASK_ID:-none} =="
 echo "   repository: ${CH4HSI_REPO}"
 echo "   data:       ${CH4HSI_DATA}"
