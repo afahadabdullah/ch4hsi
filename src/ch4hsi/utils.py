@@ -17,6 +17,7 @@ def get_logger(name: str = "ch4hsi") -> logging.Logger:
         h = logging.StreamHandler(sys.stdout)
         h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s | %(message)s", "%H:%M:%S"))
         log.addHandler(h)
+        log.propagate = False           # every module logger has its own handler; avoid duplicate lines
         log.setLevel(os.environ.get("CH4HSI_LOGLEVEL", "INFO"))
     return log
 

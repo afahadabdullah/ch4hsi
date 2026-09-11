@@ -17,7 +17,7 @@ idempotent / resumable stages.
 ```bash
 cd ~/ch4hsi
 bash slurm/submit_all.sh                     # setup-env → preflight → labels → scenes → download → preprocess
-                                             #   → split → train → evaluate → mdl → mdl-fit → report
+                                             #   → split → train → evaluate → mdl → mdl-fit → diagnose → report
 sbatch slurm/smoke.sbatch                    # synthetic end-to-end test (after setup-env has finished once)
 bash slurm/submit_stage.sh train             # one stage with its standard resources
 bash slurm/submit_all.sh --from preprocess   # resume the chain from any stage
@@ -47,7 +47,9 @@ Interactive work on a GH200 from tcsh:
 | train | grace | 1 | 32 | 240G | 24 h, `--requeue` | |
 | evaluate | grace | 1 | 16 | 160G | 6 h | |
 | mdl | grace | 1 | 16 | 160G | 12 h | 4 |
+| diagnose | grace | 1 | 8 | 96G | 2 h | |
 | mdl-fit / report | grace | – | 2 | 8G | 30 min | |
+| baseline-lr (optional) | grace | – | 8 | 64G | 2 h | |
 
 CPU-only stages request no GPU on `grace`. To keep them off GPU nodes set `CPU_PARTITION=grace-cpuonly`
 (same aarch64 env) in `slurm/site.env`; `CPU_PARTITION=compute` (x86) also works for every stage except

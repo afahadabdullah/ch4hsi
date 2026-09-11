@@ -24,6 +24,7 @@ eval:
   infer_tile: 64
   infer_stride: 48
   n_example_figures: 2
+  bootstrap: 100
 mdl:
   n_scenes: 2
   flux_kgph: [300, 1000, 3000, 8000]

@@ -19,7 +19,7 @@ ch4hsi_activate
 export CH4HSI_SMOKE="${CH4HSI_SMOKE:-${CH4HSI_DATA}/smoke}"
 rm -rf "${CH4HSI_SMOKE}"
 python -m pytest -q tests
-for stage in make-fake-data preprocess split train evaluate mdl report; do
+for stage in make-fake-data preprocess split train evaluate mdl diagnose report; do
   echo "=== ${stage}"
   python -m ch4hsi "${stage}" --config configs/smoke.yaml --set "paths.data_root=${CH4HSI_SMOKE}" \
     --set "paths.local_scratch=${CH4HSI_LOCAL}"

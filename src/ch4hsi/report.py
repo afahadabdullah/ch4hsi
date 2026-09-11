@@ -17,6 +17,10 @@ def _ci(c):
     return f"{c[0]:.0f}–{c[1]:.0f}" if c else "–"
 
 
+def _cir(c):
+    return f"{c[0]:.2f}–{c[1]:.2f}" if c else "–"
+
+
 def run(cfg: Cfg):
     out = run_dir(cfg)
     m = load_json(out / "metrics_test.json")
@@ -32,7 +36,7 @@ def run(cfg: Cfg):
     L.append("\n## Test metrics (thresholds frozen on validation)\n")
     L.append("| method | threshold | pixel P | pixel R | F1 | IoU | AP | plume R | plume P | scene AUROC | FA / 1000 km² |")
     L.append("|---|---|---|---|---|---|---|---|---|---|---|")
-    names = {"model": "U-Net", "mf": "Matched filter (val-tuned)", "mf_fixed": "Matched filter (fixed)"}
+    names = {"model": m.get("model_label", "U-Net"), "mf": "Matched filter (val-tuned)", "mf_fixed": "Matched filter (fixed)"}
     for k, lab in names.items():
         r = m[k]
         t = m["thresholds"][k]["threshold"]
@@ -52,9 +56,19 @@ def run(cfg: Cfg):
         n = mdl["noise"]
         L.append(f"\nMedian column noise-equivalent enhancement σ = {n['sigma_median_ppmm']:.0f} ppm·m; "
                  f"analytic 3σ / 9-pixel MDL ≈ {n['analytic_mdl_kgph_3sigma_9px']:.0f} kg/h.")
+    ci_rows = [(lab, m[k].get("ci90", {})) for k, lab in names.items() if m[k].get("ci90")]
+    if ci_rows:
+        L.append("\n90% scene-bootstrap confidence intervals:\n")
+        L.append("| method | F1 | IoU | plume recall | plume precision |\n|---|---|---|---|---|")
+        for lab, c in ci_rows:
+            L.append(f"| {lab} | {_cir(c.get('f1'))} | {_cir(c.get('iou'))} | {_cir(c.get('plume_recall'))} | "
+                     f"{_cir(c.get('plume_precision'))} |")
     L.append("\n## Figures\n")
     for fig in sorted((out / "figures").glob("*.png")):
         L.append(f"![{fig.stem}](figures/{fig.name})")
+    if (out / "diagnostics" / "DIAGNOSTICS.md").exists():
+        L.append("\nFull diagnostic suite (training curves, threshold sweeps, ROC, calibration, error maps, false-alarm "
+                 "analysis): [diagnostics/DIAGNOSTICS.md](diagnostics/DIAGNOSTICS.md)")
     # resume bullets with the numbers filled in
     u, b = m["model"], m["mf"]
     L.append("\n## Resume bullets (auto-filled)\n")

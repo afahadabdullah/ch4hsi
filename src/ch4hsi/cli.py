@@ -17,6 +17,8 @@ STAGES = {
     "split":          ("4  geo-blocked train/val/test split + normalisation stats", "ch4hsi.splits:run"),
     "train":          ("5  train U-Net", "ch4hsi.train:run"),
     "evaluate":       ("6  MF baseline vs model on test scenes", "ch4hsi.evaluate:run"),
+    "diagnose":       ("6b diagnostic figure suite (curves, calibration, error maps, ...)", "ch4hsi.diagnostics:run"),
+    "baseline-lr":    ("   pixel logistic-regression baseline, evaluated + diagnosed (CPU)", "ch4hsi.baselines:run"),
     "mdl":            ("7  synthetic-injection minimum detection limit (array-shardable)", "ch4hsi.mdl:run"),
     "mdl-fit":        ("7b merge MDL shards and fit POD curves", "ch4hsi.mdl:fit"),
     "report":         ("8  REPORT.md with tables, figures and resume bullets", "ch4hsi.report:run"),

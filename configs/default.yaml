@@ -122,6 +122,12 @@ eval:
   min_component_px: 4
   save_predictions: true
   n_example_figures: 12
+  bootstrap: 1000                 # scene-level bootstrap resamples for the 90% CIs in metrics_test.json
+  calib_bins: 20                  # reliability-diagram bins for the model probability
+
+diagnose:
+  n_error_maps: 3                 # best / worst plume scenes and top false-alarm scenes each
+  max_scatter_px: 200000
 
 mdl:
   n_scenes: 20

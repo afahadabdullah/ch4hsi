@@ -45,6 +45,10 @@ make measured precision a *lower bound*; the plume-free scenes give a clean fals
 - **Scene-level:** AUROC for "scene contains a plume" (max score) and false alarms per 1000 km² on plume-free scenes.
 - **Baselines:** MF with val-tuned threshold and a fixed 1000 ppm·m threshold, same smoothing/min-size post-processing.
 - **Recall vs plume strength** (per-plume csv + figure).
+- **Uncertainty:** 90% CIs from a scene-level bootstrap of the pooled counts.
+- **Diagnostics** (`ch4hsi diagnose`): threshold sweeps, ROC, calibration, per-scene IoU, false-alarm analysis
+  (albedo / noise / component size), georeferenced error maps; `ch4hsi baseline-lr` adds a no-spatial-context
+  pixel logistic-regression baseline to isolate what the U-Net's convolutions contribute.
 
 ## 4. Minimum detection limit
 

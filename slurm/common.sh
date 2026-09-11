@@ -69,6 +69,8 @@ stage_resources() {
     train)          echo "${gpu} --cpus-per-task=32 --mem=240G --time=1-00:00:00 --requeue" ;;
     evaluate)       echo "${gpu} --cpus-per-task=16 --mem=160G --time=06:00:00" ;;
     mdl)            echo "${gpu} --cpus-per-task=16 --mem=160G --time=12:00:00 --array=0-$((MDL_TASKS-1))" ;;
+    diagnose)       echo "${gpu} --cpus-per-task=8  --mem=96G  --time=02:00:00" ;;
+    baseline-lr)    echo "${cpu} --cpus-per-task=8  --mem=64G  --time=02:00:00" ;;
     mdl-fit|report) echo "${cpu} --cpus-per-task=2  --mem=8G   --time=00:30:00" ;;
     fetch-enh|mf-check|aviris-fetch) echo "${cpu} --cpus-per-task=4 --mem=32G --time=06:00:00" ;;
     aviris-eval)    echo "${gpu} --cpus-per-task=16 --mem=240G --time=06:00:00" ;;

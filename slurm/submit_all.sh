@@ -2,7 +2,7 @@
 # Submit the pipeline to NCCS Prism GH200 (`grace`) nodes as a Slurm dependency chain.
 # Run with bash (Prism's default login shell is tcsh):
 #
-#   bash slurm/submit_all.sh                          # setup-env → preflight → … → report
+#   bash slurm/submit_all.sh                          # setup-env → preflight → … → diagnose → report
 #   bash slurm/submit_all.sh --from preprocess        # data already downloaded (e.g. on the login node)
 #   bash slurm/submit_all.sh --from train --to evaluate
 #   CH4HSI_EXTRA_SETS="--set run_name=unet_synth --set train.synth_aug.enabled=true" \
@@ -14,7 +14,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/common.sh"
 cd "${CH4HSI_REPO}"
 
-ORDER=(setup-env preflight fetch-labels resolve-scenes download preprocess split train evaluate mdl report)
+ORDER=(setup-env preflight fetch-labels resolve-scenes download preprocess split train evaluate mdl diagnose report)
 FROM=${ORDER[0]}; TO=${ORDER[-1]}
 while [ $# -gt 0 ]; do
   case $1 in

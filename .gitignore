@@ -7,3 +7,5 @@ logs/
 .ipynb_checkpoints/
 slurm/site.env
 data/
+.DS_Store
+Claude outputs/
