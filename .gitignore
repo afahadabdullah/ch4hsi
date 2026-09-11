@@ -5,3 +5,5 @@ logs/
 *.nc
 *.npy
 .ipynb_checkpoints/
+slurm/site.env
+data/

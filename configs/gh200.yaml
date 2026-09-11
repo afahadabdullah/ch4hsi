@@ -1,0 +1,18 @@
+# NCCS Prism GH200 (grace partition): 1x H100 96 GB HBM3, 72 Grace cores, 480 GB RAM, 1 TB /lscratch.
+# Layered over default.yaml by the Slurm scripts (CH4HSI_CONFIG).
+paths:
+  data_root: ${CH4HSI_DATA:-/panfs/ccds02/nobackup/people/${USER}/ch4hsi}
+
+train:
+  batch_size: 96          # 128x128 tiles x 18 ch; far below 96 GB, bounded by data loading
+  lr: 2.0e-3              # ~linear scaling from 1e-3 @ 32 (warmup covers the jump)
+  warmup_epochs: 3
+  tiles_per_epoch: 16000
+  val_tiles: 4000
+  num_workers: 24         # capped at SLURM_CPUS_PER_TASK - 1 (train requests 32 cores)
+  amp: bf16               # H100 native bf16, no GradScaler needed
+  stage_to_local: true    # scenes -> /lscratch/$USER/$SLURM_JOB_ID
+
+eval:
+  infer_tile: 512
+  infer_stride: 448

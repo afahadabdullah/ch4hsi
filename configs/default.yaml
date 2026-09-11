@@ -5,7 +5,7 @@
 run_name: unet_v1
 
 paths:
-  data_root: ${CH4HSI_DATA:-/explore/nobackup/people/${USER}/ch4hsi}
+  data_root: ${CH4HSI_DATA:-/panfs/ccds02/nobackup/people/${USER}/ch4hsi}
   # Everything below is derived from data_root unless set explicitly.
   catalog: null        # <data_root>/catalog
   raw: null            # <data_root>/raw

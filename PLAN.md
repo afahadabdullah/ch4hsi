@@ -17,7 +17,7 @@ estimated minimum detection limit (MDL). Everything runs as Slurm jobs on NCCS P
 **Scene set (default).** 300 scenes that contain ≥1 plume complex (sampled across the catalogue) + 150 plume-free
 "hard negative" scenes over oil/gas/coal regions (Permian, Turkmenistan, Algeria, Iran, W Kazakhstan, Four Corners,
 Libya/Egypt, Shanxi), cloud cover ≤ 40 %. ≈ 0.8 TB raw, ≈ 70 GB preprocessed. Halve `scenes.max_positive_scenes` if
-the `/explore/nobackup` quota is tight.
+the PanFS nobackup quota is tight.
 
 **Label semantics.** A pixel is positive if it lies inside a plume complex (COG valid & > `labels.min_ppmm`) after
 reprojection onto the scene's GLT grid. Pixels outside catalogued complexes are negatives — unlabelled real plumes
@@ -54,20 +54,25 @@ and record detection with the frozen thresholds. Fit a logistic POD in log Q →
 the model and the MF baseline; also POD vs peak ppm·m and an analytic noise-based MDL
 (`Q = U·IME/L` for a 9-pixel 3σ plume) as a sanity check.
 
-## 5. Compute plan on NCCS Prism
+## 5. Compute plan on NCCS Prism (GH200 `grace` partition)
 
-| stage | where | resources | wall-time (est.) |
-|---|---|---|---|
-| fetch-labels, resolve-scenes | CPU (or login node) | 2–4 cores | < 3 h |
-| download (array ×8, 4 concurrent) | CPU (or login node) | 4 cores | 6–12 h for 0.8 TB |
-| preprocess (array ×16) | CPU | 8 cores, 48 GB | ~1–2 h |
-| split | CPU | 4 cores | minutes |
-| train | 1 GPU (V100/A100/H100) | 10 cores, 96 GB | 1–3 h |
-| evaluate | 1 GPU | | < 1 h |
-| mdl (array ×4) + mdl-fit | 1 GPU each | | 1–2 h |
+Node: 1× GH200 (H100 96 GB) + 72 Grace cores (aarch64), 480 GB RAM, 1 TB `/lscratch`. Data on
+`/panfs/ccds02/nobackup/people/$USER/ch4hsi`. All stages run on `grace` (CPU stages without a GPU).
 
-Run `slurm/check_network.sh` first: if compute nodes lack outbound internet, run stages 1–2 on the login node with
-`slurm/download_on_login.sh`, then `slurm/submit_all.sh --from preprocess`.
+| stage | resources | wall-time (est.) |
+|---|---|---|
+| setup-env (once) | 1 GPU, 8 cores | 20–40 min |
+| preflight | 1 core | minutes |
+| fetch-labels, resolve-scenes | 2–4 cores | < 3 h |
+| download (array ×8, 4 concurrent) | 4 cores each | 6–12 h for 0.8 TB |
+| preprocess (array ×16) | 8 cores, 48 GB each | ~1–2 h |
+| split | 8 cores | minutes |
+| train | 1 GPU, 32 cores, 240 GB, bf16, batch 96 | ~1–2 h |
+| evaluate | 1 GPU, 16 cores | < 1 h |
+| mdl (array ×4) + mdl-fit | 1 GPU each | ~1 h |
+
+`01_preflight` checks Earthdata/LP DAAC egress before any download; if it fails, run stages 1–2 on gpulogin1
+(`slurm/setup_login_env.sh` + `slurm/download_on_login.sh`), then `slurm/submit_all.sh --from preprocess`.
 
 ## 6. Milestones
 
@@ -84,7 +89,7 @@ Run `slurm/check_network.sh` first: if compute nodes lack outbound internet, run
 - *Class imbalance* → plume-centred tile sampling, pos_weight, Dice; thresholds tuned on val.
 - *Leakage across overpasses* → geo-block split.
 - *Storage quota* → reduce scene count or `preprocess.delete_raw` (keep raw for test negatives needed by MDL).
-- *Prism specifics* (partition names, internet on compute nodes, aarch64 Grace nodes) → all in `slurm/env.sh`.
+- *Prism specifics* (aarch64 GH200 vs x86 login, compute-node egress, partitions) → `slurm/common.sh`, `slurm/site.env`, preflight job.
 
 ## 8. Resume bullets (numbers auto-filled into REPORT.md)
 

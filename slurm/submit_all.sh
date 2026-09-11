@@ -1,55 +1,54 @@
 #!/bin/bash
-# Submit the whole pipeline as a Slurm dependency chain on NCCS Prism.
+# Submit the pipeline to NCCS Prism GH200 (`grace`) nodes as a Slurm dependency chain.
+# Run with bash (Prism's default login shell is tcsh):
 #
-#   bash slurm/submit_all.sh                      # everything
-#   bash slurm/submit_all.sh --from preprocess    # data already downloaded (e.g. on the login node)
+#   bash slurm/submit_all.sh                          # setup-env → preflight → … → report
+#   bash slurm/submit_all.sh --from preprocess        # data already downloaded (e.g. on the login node)
 #   bash slurm/submit_all.sh --from train --to evaluate
-#   CH4HSI_EXTRA_SETS="--set run_name=unet_synth --set train.synth_aug.enabled=true" bash slurm/submit_all.sh --from train
+#   CH4HSI_EXTRA_SETS="--set run_name=unet_synth --set train.synth_aug.enabled=true" \
+#       bash slurm/submit_all.sh --from train
 #
-# Stages: fetch-labels resolve-scenes download preprocess split train evaluate mdl report
+# Re-running is safe: setup-env, download and preprocess skip completed work.
 set -euo pipefail
-HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-export CH4HSI_REPO=${CH4HSI_REPO:-$(dirname "$HERE")}
-source "$HERE/env.sh"
-mkdir -p "$CH4HSI_REPO/logs"
-cd "$CH4HSI_REPO"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${HERE}/common.sh"
+cd "${CH4HSI_REPO}"
 
-ORDER=(fetch-labels resolve-scenes download preprocess split train evaluate mdl report)
+ORDER=(setup-env preflight fetch-labels resolve-scenes download preprocess split train evaluate mdl report)
 FROM=${ORDER[0]}; TO=${ORDER[-1]}
 while [ $# -gt 0 ]; do
-    case $1 in
-        --from) FROM=$2; shift 2;;
-        --to) TO=$2; shift 2;;
-        *) echo "unknown arg $1"; exit 1;;
-    esac
+  case $1 in
+    --from) FROM=$2; shift 2 ;;
+    --to)   TO=$2; shift 2 ;;
+    *) echo "unknown argument $1" >&2; exit 1 ;;
+  esac
 done
-idx() { local i; for i in "${!ORDER[@]}"; do [ "${ORDER[$i]}" = "$1" ] && echo "$i" && return; done; echo "bad stage $1" >&2; exit 1; }
-I0=$(idx "$FROM"); I1=$(idx "$TO")
+idx() { local i; for i in "${!ORDER[@]}"; do [ "${ORDER[$i]}" = "$1" ] && { echo "$i"; return; }; done; echo "bad stage $1" >&2; exit 1; }
+I0=$(idx "${FROM}"); I1=$(idx "${TO}")
+[ -z "${SG_ACCOUNT:-}${SLURM_ACCOUNT:-}" ] || echo "NOTE: not passing an account; Prism uses your default Grace allocation." >&2
+mapfile -t COMMON < <(sbatch_common)
 
-CPU="-p $CPU_PARTITION $SBATCH_ACCOUNT_OPT"
-GPU="-p $GPU_PARTITION -G1 $SBATCH_ACCOUNT_OPT"
-declare -A RES=(
-    [fetch-labels]="$CPU -c 4 --mem=8G -t 03:00:00"
-    [resolve-scenes]="$CPU -c 2 --mem=8G -t 06:00:00"
-    [download]="$CPU -c 4 --mem=8G -t 12:00:00 --array=0-$((DOWNLOAD_TASKS-1))%$DOWNLOAD_CONCURRENCY"
-    [preprocess]="$CPU -c 8 --mem=48G -t 10:00:00 --array=0-$((PREPROCESS_TASKS-1))"
-    [split]="$CPU -c 4 --mem=32G -t 01:00:00"
-    [train]="$GPU -c 10 --mem=96G -t 1-00:00:00 --requeue"
-    [evaluate]="$GPU -c 8 --mem=96G -t 06:00:00"
-    [mdl]="$GPU -c 8 --mem=96G -t 12:00:00 --array=0-$((MDL_TASKS-1))"
-    [report]="$CPU -c 2 --mem=8G -t 00:30:00"
-)
-dep=""
+script_for() {
+  case "$1" in
+    setup-env) echo "slurm/00_setup_env.sbatch" ;;
+    preflight) echo "slurm/01_preflight.sbatch" ;;
+    *)         echo "slurm/job.sbatch $1" ;;
+  esac
+}
+
+dep=()
 for ((i=I0; i<=I1; i++)); do
-    s=${ORDER[$i]}
-    # shellcheck disable=SC2086
-    jid=$(sbatch --parsable -J "ch4_$s" $dep ${RES[$s]} slurm/job.sbatch "$s")
-    jid=${jid%%;*}
-    echo "submitted $s -> $jid"
-    dep="--dependency=afterok:$jid"
-    if [ "$s" = "mdl" ]; then       # merge MDL shards + fit POD curves
-        jid=$(sbatch --parsable -J ch4_mdl-fit $dep $CPU -c 2 --mem=8G -t 00:30:00 slurm/job.sbatch mdl-fit)
-        echo "submitted mdl-fit -> $jid"; dep="--dependency=afterok:$jid"
-    fi
+  s=${ORDER[$i]}
+  # shellcheck disable=SC2046
+  jid=$(sbatch "${COMMON[@]}" ${dep[@]+"${dep[@]}"} --job-name="ch4-${s}" $(stage_resources "${s}") $(script_for "${s}"))
+  jid=${jid%%;*}
+  printf '%-15s %s   [%s]\n' "${s}" "${jid}" "$(stage_resources "${s}" | grep -o -- '--partition=[^ ]*')"
+  dep=(--dependency=afterok:"${jid}")
+  if [ "${s}" = mdl ]; then        # merge MDL shards + fit POD curves
+    # shellcheck disable=SC2046
+    jid=$(sbatch "${COMMON[@]}" ${dep[@]+"${dep[@]}"} --job-name=ch4-mdl-fit $(stage_resources mdl-fit) slurm/job.sbatch mdl-fit)
+    printf '%-15s %s\n' "mdl-fit" "${jid}"
+    dep=(--dependency=afterok:"${jid}")
+  fi
 done
-echo "monitor: squeue -u $USER ; logs in $CH4HSI_REPO/logs/"
+echo "monitor: squeue --me   |   logs: ${CH4HSI_REPO}/logs/"

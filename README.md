@@ -10,24 +10,22 @@ L1B radiance ──► column-wise matched filter (ppm·m) ──► 18 sensor-a
 EMIT L2B plume complexes (COG/GeoJSON) ──► rasterised labels ───────────────────────► metrics + MDL (injection)
 ```
 
-## Quick start on Prism
+## Quick start on Prism (GH200 `grace` nodes)
 
 ```bash
-ssh adaptlogin.nccs.nasa.gov        # then: ssh gpulogin1  (Prism login)
+ssh adaptlogin.nccs.nasa.gov        # then: ssh gpulogin1
 git clone <your-repo> ~/ch4hsi && cd ~/ch4hsi
-vi slurm/env.sh                     # paths, partitions (defaults: /explore/nobackup/people/$USER, partition "compute")
 
 # Earthdata credentials (https://urs.earthdata.nasa.gov) for LP DAAC downloads
 echo "machine urs.earthdata.nasa.gov login <USER> password <PASS>" >> ~/.netrc && chmod 600 ~/.netrc
 
-bash slurm/setup_env.sh             # conda env + torch (cu126) + mag1c LUT + this package
-sbatch -p compute -G1 -c 4 --mem=32G -t 01:00:00 slurm/smoke.sbatch   # synthetic end-to-end test, ~10 min
-bash slurm/check_network.sh         # can compute nodes reach Earthdata?
-
-bash slurm/submit_all.sh            # full chain: labels → scenes → download → preprocess → split → train → evaluate → mdl → report
-# if compute nodes have no internet:
-tmux new -s dl 'bash slurm/download_on_login.sh'   &&   bash slurm/submit_all.sh --from preprocess
+bash slurm/submit_all.sh            # builds the aarch64 env on a GH200, preflights egress, then runs every stage
+sbatch slurm/smoke.sbatch           # optional: synthetic end-to-end test once the env exists
 ```
+
+Defaults: data under `/panfs/ccds02/nobackup/people/$USER/ch4hsi`, all jobs on partition `grace`, no account
+flag, `configs/gh200.yaml`. Overrides go in `slurm/site.env` (see `slurm/site.env.example`); details, resource
+table and the login-node download fallback are in [slurm/README.md](slurm/README.md).
 
 Results land in `$CH4HSI_DATA/runs/<run_name>/`: `REPORT.md` (tables, figures, auto-filled resume bullets),
 `metrics_test.json`, `mdl.json`, `per_plume_test.csv`, `figures/`.
@@ -51,15 +49,15 @@ Results land in `$CH4HSI_DATA/runs/<run_name>/`: `REPORT.md` (tables, figures, a
 Useful overrides: `--set run_name=unet_synth --set train.synth_aug.enabled=true`, `--set features=[mf,mf_snr]`
 (MF-only ablation), `--set scenes.max_positive_scenes=150`, `--set labels.source=ghgc_stac`,
 `--set train.model=smp` (needs `segmentation_models_pytorch`). With `submit_all.sh`, pass them through
-`CH4HSI_EXTRA_SETS="--set ..."`.
+`CH4HSI_EXTRA_SETS="--set ..."` (also works with `slurm/submit_stage.sh <stage>`).
 
 ## Prism notes
 
-- Partitions (NCCS docs): `compute` (4× V100 32 GB, x86_64, default), `dgx` (8× A100), `grace` (GH200, **aarch64** —
-  build a separate env there: `CH4HSI_ENV=.../ch4hsi-arm TORCH_INDEX=https://download.pytorch.org/whl/cu128 bash slurm/setup_env.sh`
-  inside an interactive grace job, then set `GPU_PARTITION=grace` and `CH4HSI_ENV` accordingly).
-- Training stages scenes to node-local `/lscratch` (`train.stage_to_local`), removed at job exit.
-- `train` is submitted with `--requeue` and resumes from `last.pt`.
+- GH200 nodes are **aarch64** while gpulogin1 is x86_64, so the job env is built inside a grace job
+  (`slurm/00_setup_env.sbatch`, first link of `submit_all.sh`, idempotent). torch comes from the cu128 aarch64
+  wheels (fallback: conda-forge `pytorch-gpu`); training uses bf16 on the H100.
+- Training stages scenes to node-local `/lscratch` (`train.stage_to_local`), removed at job exit; `train` is
+  submitted with `--requeue` and resumes from `last.pt`.
 - Re-running `mdl`: delete old `runs/<run>/mdl_records*.csv` first (the fit merges every shard file it finds).
 
 ## Tests

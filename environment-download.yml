@@ -1,0 +1,17 @@
+# x86_64 download/catalogue environment for gpulogin1 (no PyTorch). See slurm/setup_login_env.sh.
+name: ch4hsi-download
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - numpy>=1.26
+  - scipy>=1.11
+  - pandas>=2.1
+  - pyyaml
+  - netcdf4
+  - h5py
+  - rasterio>=1.3
+  - affine
+  - pyproj
+  - requests
+  - earthaccess>=0.9
+  - pip
