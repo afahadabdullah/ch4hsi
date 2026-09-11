@@ -74,7 +74,7 @@ ensure_directory "$(dirname "${prefix}")"
     echo "Creating one-time $(uname -m) environment: ${prefix}"
     conda create --yes --prefix "${prefix}" python=3.11 pip
   fi
-  conda env update --yes --prefix "${prefix}" --file "${CH4HSI_REPO}/environment.yml"
+  conda env update --prefix "${prefix}" --file "${CH4HSI_REPO}/environment.yml"
   py="${prefix}/bin/python"
   "${py}" -m pip install --upgrade pip
   if ! "${py}" -m pip install torch --index-url "${TORCH_INDEX}" || \

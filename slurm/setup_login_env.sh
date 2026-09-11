@@ -17,7 +17,7 @@ ensure_directory "$(dirname "${prefix}")"
 (
   flock 9
   [ -x "${prefix}/bin/python" ] || conda create --yes --prefix "${prefix}" python=3.11 pip
-  conda env update --yes --prefix "${prefix}" --file "${CH4HSI_REPO}/environment-download.yml"
+  conda env update --prefix "${prefix}" --file "${CH4HSI_REPO}/environment-download.yml"
   "${prefix}/bin/python" -m pip install --no-deps mag1c
   "${prefix}/bin/python" -m pip install --no-deps -e "${CH4HSI_REPO}"
   "${prefix}/bin/python" -c 'import earthaccess, rasterio, netCDF4, ch4hsi; print("x86 download environment OK")'
