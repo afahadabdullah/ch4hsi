@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ch4-preflight
 #SBATCH --output=logs/%x-%j.out
-#SBATCH --partition=grace
+#SBATCH --partition=compute
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=00:10:00

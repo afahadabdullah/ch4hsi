@@ -1,15 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=ch4-setup-env
 #SBATCH --output=logs/%x-%j.out
-#SBATCH --partition=grace
+#SBATCH --partition=v100
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=8
 #SBATCH --gpus=1
 #SBATCH --mem=32G
 #SBATCH --time=02:00:00
 #SBATCH --export=ALL
 #
-# Build (once) the aarch64 environment on a GH200 node: gpulogin1 is x86_64, so a Grace env cannot be
-# built there. Idempotent and flock-serialised; submit_all.sh runs it first and skips work if the env
+# Build (once) the environment for the current architecture (x86_64 or aarch64).
+# Idempotent and flock-serialised; submit_all.sh runs it first and skips work if the env
 # already imports torch with CUDA. Submit from the repo root:  sbatch slurm/00_setup_env.sbatch
 set -euo pipefail
 HPC_DIR="${CH4HSI_HPC_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}/slurm}"
