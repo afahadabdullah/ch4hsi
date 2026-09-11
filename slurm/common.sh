@@ -46,8 +46,8 @@ case "$(uname -m)" in
     export TRAIN_MEM="${TRAIN_MEM:-240G}"
     ;;
   *)
-    # x86 architecture (e.g. 2x V100, 20 CPU cores, 380GB RAM on Prism)
-    export GPU_PARTITION="${GPU_PARTITION:-${SLURM_JOB_PARTITION:-gpu}}"
+    # x86 architecture (e.g. 2x V100, 20 CPU cores, 380GB RAM on Prism/Discover compute partition)
+    export GPU_PARTITION="${GPU_PARTITION:-${SLURM_JOB_PARTITION:-compute}}"
     export CPU_PARTITION="${CPU_PARTITION:-compute}"
     export CH4HSI_CONFIG="${CH4HSI_CONFIG:-${CH4HSI_REPO}/configs/x86_v100.yaml}"
     export TRAIN_GPUS="${TRAIN_GPUS:-2}"
