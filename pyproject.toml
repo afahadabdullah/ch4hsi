@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ch4hsi"
+version = "0.1.0"
+description = "Hyperspectral methane plume detection on EMIT / AVIRIS-NG radiance: matched filter baseline, U-Net, detection limits"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "pandas", "pyyaml"]
+
+[project.optional-dependencies]
+io = ["netCDF4", "h5py", "rasterio", "affine", "pyproj", "earthaccess", "requests"]
+ml = ["torch>=2.1", "matplotlib"]
+
+[project.scripts]
+ch4hsi = "ch4hsi.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

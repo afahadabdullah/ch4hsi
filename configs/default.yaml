@@ -1,0 +1,146 @@
+# ch4hsi default configuration.
+# Any value can be overridden on the command line:  ch4hsi train --set train.epochs=80 --set train.lr=5e-4
+# Strings support ${VAR} and ${VAR:-default} environment expansion.
+
+run_name: unet_v1
+
+paths:
+  data_root: ${CH4HSI_DATA:-/explore/nobackup/people/${USER}/ch4hsi}
+  # Everything below is derived from data_root unless set explicitly.
+  catalog: null        # <data_root>/catalog
+  raw: null            # <data_root>/raw
+  scenes: null         # <data_root>/scenes      (preprocessed, per-scene .npy stacks)
+  splits: null         # <data_root>/splits
+  runs: null           # <data_root>/runs
+  local_scratch: ${TMPDIR:-/tmp}   # overridden to /lscratch/... inside Slurm jobs
+
+earthdata:
+  plume_short_name: EMITL2BCH4PLM
+  plume_version: "002"
+  l1b_short_name: EMITL1BRAD
+  l1b_version: "001"
+  enh_short_name: EMITL2BCH4ENH   # only used by the optional MF cross-check
+  enh_version: "002"
+
+labels:
+  source: lpdaac                  # lpdaac (EMITL2BCH4PLM COG + GeoJSON) | ghgc_stac (US GHG Center STAC)
+  ghgc_stac_url: https://earth.gov/ghgcenter/api/stac
+  ghgc_collection: emit-ch4plume-v1
+  ghgc_asset: ch4-plume-emissions
+  temporal: ["2023-01-01", "2025-12-31"]
+  bbox: null                      # [W, S, E, N] to restrict the catalogue, or null for global
+  max_plumes: null                # null = fetch the whole catalogue in the date range
+  min_ppmm: 0.0                   # plume-complex pixels with enhancement > this are positives
+
+scenes:
+  max_positive_scenes: 300
+  negatives_per_positive: 0.5
+  max_cloud_cover: 40             # percent (UMM CloudCover), negatives only
+  time_window_min: 10             # plume <-> scene time matching tolerance
+  seed: 7
+  # Plume-free "hard negative" scenes are drawn from these oil/gas/coal/landfill regions.
+  negative_regions:
+    permian:        [-104.5, 30.5, -100.5, 33.5]
+    turkmenistan:   [52.5, 37.0, 62.0, 42.0]
+    algeria_hassi:  [4.0, 29.0, 10.0, 33.0]
+    iran_south:     [49.0, 27.0, 56.0, 31.0]
+    kazakhstan_w:   [50.0, 43.0, 56.0, 47.5]
+    four_corners:   [-109.5, 36.0, -106.5, 37.5]
+    libya_egypt:    [18.0, 27.0, 30.0, 31.5]
+    china_shanxi:   [110.5, 35.0, 114.0, 40.0]
+  negatives_per_region_query: 300
+
+download:
+  workers: 4
+  keep_obs: false                 # OBS file not required by the pipeline
+
+physics:
+  lut: mag1c                      # mag1c (uses ch4.hdr/ch4.lut shipped in the mag1c wheel) | synthetic (tests only) | /path/to/dir
+  mf_window_nm: [2122, 2488]
+  exclude_nm: [[1350, 1420], [1800, 1945]]
+  column_group: 1                 # pool statistics over N adjacent detector columns
+  shrinkage: 1.0e-3               # C <- (1-a) C + a diag(C)
+  two_pass: true                  # re-estimate background after masking positive outliers
+  outlier_sigma: 3.0
+  albedo_correction: true
+  pressure_pa: 101325.0           # ppm·m <-> kg m-2 conversion (STP convention)
+  temperature_k: 273.15
+
+preprocess:
+  n_swir_bins: 12
+  rgb_nm: [650, 560, 470]
+  store_dtype: float16
+  delete_raw: false               # keep raw L1B: the MDL stage re-injects into radiance
+  overwrite: false
+
+features: [mf, mf_snr, swir_resid, albedo, rgb]
+
+split:
+  method: geo_block               # geo_block (no facility leakage) | random
+  block_deg: 1.0
+  fractions: [0.7, 0.15, 0.15]
+  seed: 42
+  norm_samples_per_scene: 20000
+
+train:
+  model: unet                     # unet | smp (needs segmentation_models_pytorch)
+  smp_encoder: resnet34
+  base_channels: 32
+  depth: 4
+  dropout: 0.1
+  tile: 128
+  epochs: 60
+  tiles_per_epoch: 8000
+  val_tiles: 2000
+  batch_size: 32
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  warmup_epochs: 2
+  num_workers: 8
+  pos_tile_frac: 0.5
+  min_valid_frac: 0.5
+  bce_pos_weight: 5.0
+  dice_weight: 1.0
+  amp: auto                       # auto | bf16 | fp16 | off
+  early_stop_patience: 12
+  stage_to_local: true            # copy scenes to node-local NVMe (/lscratch) before training
+  seed: 1
+  synth_aug:                      # physics-consistent synthetic plumes pasted in feature space
+    enabled: false
+    prob: 0.25
+    flux_kgph: [150, 3000]
+    wind_ms: [2.0, 6.0]
+    label_min_ppmm: 300
+
+eval:
+  infer_tile: 256
+  infer_stride: 192
+  n_bins: 2000
+  mf_max_ppmm: 5000
+  mf_smooth_sigma_px: 1.0
+  mf_fixed_threshold_ppmm: 1000
+  min_component_px: 4
+  save_predictions: true
+  n_example_figures: 12
+
+mdl:
+  n_scenes: 20
+  flux_kgph: [100, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000]
+  wind_ms: 3.0
+  plumes_per_scene: 6
+  min_separation_px: 40
+  pixel_m: 60.0
+  max_plume_age_s: 900
+  turbulence: 0.3
+  footprint_min_ppmm: 100
+  repeats: 1
+  pod_levels: [0.5, 0.9]
+  bootstrap: 500
+  seed: 11
+
+aviris:
+  enabled: false
+  short_name: AVIRIS-NG_L1B_radiance_2095
+  flightlines_csv: null           # columns: flight_line, lat, lon  (one row per labelled plume)
+  aggregate_to_m: 60              # block-average radiance to EMIT-like GSD; null = native
+  match_radius_m: 200

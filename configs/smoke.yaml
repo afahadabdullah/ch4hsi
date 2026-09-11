@@ -1,0 +1,32 @@
+# End-to-end smoke test on synthetic EMIT-format data (see slurm/smoke.sbatch).
+# Uses the mag1c LUT if installed; otherwise set physics.lut=synthetic.
+run_name: smoke
+paths:
+  data_root: ${CH4HSI_SMOKE:-${HOME}/ch4hsi_smoke}
+split:
+  method: random
+  fractions: [0.5, 0.25, 0.25]
+  norm_samples_per_scene: 2000
+train:
+  tile: 64
+  epochs: 3
+  tiles_per_epoch: 256
+  val_tiles: 64
+  batch_size: 8
+  num_workers: 2
+  base_channels: 16
+  depth: 3
+  stage_to_local: false
+  warmup_epochs: 1
+  synth_aug:
+    enabled: true
+eval:
+  infer_tile: 64
+  infer_stride: 48
+  n_example_figures: 2
+mdl:
+  n_scenes: 2
+  flux_kgph: [300, 1000, 3000, 8000]
+  plumes_per_scene: 3
+  min_separation_px: 30
+  bootstrap: 20

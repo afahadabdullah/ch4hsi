@@ -1,0 +1,19 @@
+# conda env for ch4hsi (PyTorch is installed with pip by slurm/setup_env.sh to match the GPU/arch).
+name: ch4hsi
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - numpy>=1.26
+  - scipy>=1.11
+  - pandas>=2.1
+  - pyyaml
+  - netcdf4
+  - h5py
+  - rasterio>=1.3
+  - affine
+  - pyproj
+  - matplotlib
+  - requests
+  - earthaccess>=0.9
+  - pytest
+  - pip
