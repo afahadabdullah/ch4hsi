@@ -2,7 +2,7 @@
 
 Matched-filter baseline + U-Net segmentation on NASA EMIT L1B radiance, labelled with EMIT L2B methane plume
 complexes, evaluated with precision/recall, IoU, plume-level and scene-level metrics, and a minimum detection limit from
-synthetic plume injection. Built to run end-to-end on **NCCS Prism** with Slurm. See [PLAN.md](PLAN.md) for the design.
+synthetic plume injection. Built to run end-to-end on **HPC cloud** with Slurm. See [PLAN.md](PLAN.md) for the design.
 
 ![ch4hsi workflow](docs/figures/workflow.png)
 
@@ -10,10 +10,9 @@ synthetic plume injection. Built to run end-to-end on **NCCS Prism** with Slurm.
 EMIT-format data (no real scenes are in the repo yet) with the pixel logistic-regression baseline standing
 in for the U-Net; regenerate it from a real run with `scripts/make_readme_figures.py` (see [Figures](#figures)).*
 
-## Quick start on Prism (GH200 `grace` nodes)
+## Quick start on HPC cloud (GH200 `grace` nodes)
 
 ```bash
-ssh adaptlogin.nccs.nasa.gov        # then: ssh gpulogin1
 git clone <your-repo> ~/ch4hsi && cd ~/ch4hsi
 
 # Earthdata credentials (https://urs.earthdata.nasa.gov) for LP DAAC downloads
@@ -60,7 +59,7 @@ All figures below come from `python scripts/make_readme_figures.py` and are **sy
 (285 bands, Gaussian plumes injected with Beer–Lambert, rotated GLT, footprints over real oil & gas regions) pushed
 through the real `preprocess → split → evaluate → diagnose` code. Numbers on them are not results. The model panels
 show the pixel logistic-regression baseline because torch was not available where they were made; with torch
-installed the script trains a quick U-Net instead. On Prism, after a real run:
+installed the script trains a quick U-Net instead. On HPC cloud, after a real run:
 
 ```bash
 python scripts/make_readme_figures.py --config configs/gh200.yaml --run unet_v1   # real scenes + U-Net predictions
@@ -95,7 +94,7 @@ false-alarm-prone scenes, all indexed in `DIAGNOSTICS.md`. Missing inputs just s
 ![reliability](docs/figures/diag_05_reliability.png)
 ![false alarms](docs/figures/diag_08_false_alarms.png)
 
-## Prism notes
+## HPC cloud notes
 
 - GH200 nodes are **aarch64** while gpulogin1 is x86_64, so the job env is built inside a grace job
   (`slurm/00_setup_env.sbatch`, first link of `submit_all.sh`, idempotent). torch comes from the cu128 aarch64
