@@ -47,7 +47,7 @@ case "$(uname -m)" in
     ;;
   *)
     # x86 architecture (e.g. 2x V100, 20 CPU cores, 380GB RAM on Prism/Discover compute partition)
-    export GPU_PARTITION="${GPU_PARTITION:-${SLURM_JOB_PARTITION:-compute}}"
+    export GPU_PARTITION="${GPU_PARTITION:-compute}"
     export CPU_PARTITION="${CPU_PARTITION:-compute}"
     export CH4HSI_CONFIG="${CH4HSI_CONFIG:-${CH4HSI_REPO}/configs/x86_v100.yaml}"
     export TRAIN_GPUS="${TRAIN_GPUS:-2}"
@@ -57,7 +57,8 @@ case "$(uname -m)" in
 esac
 
 export DOWNLOAD_TASKS="${DOWNLOAD_TASKS:-8}" DOWNLOAD_CONCURRENCY="${DOWNLOAD_CONCURRENCY:-4}"
-export PREPROCESS_TASKS="${PREPROCESS_TASKS:-16}" MDL_TASKS="${MDL_TASKS:-4}"
+export PREPROCESS_TASKS="${PREPROCESS_TASKS:-16}" PREPROCESS_CONCURRENCY="${PREPROCESS_CONCURRENCY:-4}"
+export MDL_TASKS="${MDL_TASKS:-4}" MDL_CONCURRENCY="${MDL_CONCURRENCY:-2}"
 
 # Environments are keyed by architecture (aarch64 or x86_64).
 export CH4HSI_ENV_AARCH64="${CH4HSI_ENV_AARCH64:-${CH4HSI_DATA}/.envs/ch4hsi-aarch64}"
@@ -84,11 +85,11 @@ stage_resources() {
     fetch-labels)   echo "${cpu} --cpus-per-task=4  --mem=8G   --time=03:00:00" ;;
     resolve-scenes) echo "${cpu} --cpus-per-task=2  --mem=8G   --time=06:00:00" ;;
     download)       echo "${cpu} --cpus-per-task=4  --mem=8G   --time=12:00:00 --array=0-$((DOWNLOAD_TASKS-1))%${DOWNLOAD_CONCURRENCY}" ;;
-    preprocess)     echo "${cpu} --cpus-per-task=8  --mem=48G  --time=10:00:00 --array=0-$((PREPROCESS_TASKS-1))" ;;
+    preprocess)     echo "${cpu} --cpus-per-task=8  --mem=48G  --time=10:00:00 --array=0-$((PREPROCESS_TASKS-1))%${PREPROCESS_CONCURRENCY}" ;;
     split)          echo "${cpu} --cpus-per-task=8  --mem=64G  --time=01:00:00" ;;
     train)          echo "${gpu_train} --cpus-per-task=${TRAIN_CPUS} --mem=${TRAIN_MEM} --time=1-00:00:00 --requeue" ;;
     evaluate)       echo "${gpu} --cpus-per-task=16 --mem=160G --time=06:00:00" ;;
-    mdl)            echo "${gpu} --cpus-per-task=16 --mem=160G --time=12:00:00 --array=0-$((MDL_TASKS-1))" ;;
+    mdl)            echo "${gpu} --cpus-per-task=16 --mem=160G --time=12:00:00 --array=0-$((MDL_TASKS-1))%${MDL_CONCURRENCY}" ;;
     diagnose)       echo "${gpu} --cpus-per-task=8  --mem=96G  --time=02:00:00" ;;
     baseline-lr)    echo "${cpu} --cpus-per-task=8  --mem=64G  --time=02:00:00" ;;
     mdl-fit|report) echo "${cpu} --cpus-per-task=2  --mem=8G   --time=00:30:00" ;;
