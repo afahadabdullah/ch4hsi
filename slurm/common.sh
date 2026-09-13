@@ -44,6 +44,7 @@ case "$(uname -m)" in
     export TRAIN_GPUS="${TRAIN_GPUS:-1}"
     export TRAIN_CPUS="${TRAIN_CPUS:-32}"
     export TRAIN_MEM="${TRAIN_MEM:-240G}"
+    export TRAIN_TIME="${TRAIN_TIME:-1-00:00:00}"
     ;;
   *)
     # x86 architecture (e.g. 2x V100, 20 CPU cores, 380GB RAM on Prism/Discover compute partition)
@@ -53,8 +54,17 @@ case "$(uname -m)" in
     export TRAIN_GPUS="${TRAIN_GPUS:-2}"
     export TRAIN_CPUS="${TRAIN_CPUS:-20}"
     export TRAIN_MEM="${TRAIN_MEM:-380G}"
+    # 24 h needs a long-running QOS on most x86 partitions (jobs sit in PD with InvalidQOS otherwise).
+    # `train` is submitted --requeue and resumes from last.pt, so a shorter limit only costs a requeue.
+    export TRAIN_TIME="${TRAIN_TIME:-12:00:00}"
     ;;
 esac
+
+# Wall-time per stage (override in site.env when a QOS caps the default).
+export EVAL_TIME="${EVAL_TIME:-06:00:00}" MDL_TIME="${MDL_TIME:-12:00:00}" DIAGNOSE_TIME="${DIAGNOSE_TIME:-02:00:00}"
+export DOWNLOAD_TIME="${DOWNLOAD_TIME:-12:00:00}" PREPROCESS_TIME="${PREPROCESS_TIME:-10:00:00}"
+# Optional scheduler extras; unset by default (Prism resolves the account itself).
+export CH4HSI_QOS="${CH4HSI_QOS:-}" CH4HSI_ACCOUNT="${CH4HSI_ACCOUNT:-}"
 
 export DOWNLOAD_TASKS="${DOWNLOAD_TASKS:-8}" DOWNLOAD_CONCURRENCY="${DOWNLOAD_CONCURRENCY:-4}"
 export PREPROCESS_TASKS="${PREPROCESS_TASKS:-16}" PREPROCESS_CONCURRENCY="${PREPROCESS_CONCURRENCY:-4}"
@@ -84,13 +94,14 @@ stage_resources() {
     preflight)      echo "${cpu} --cpus-per-task=1  --mem=4G   --time=00:10:00" ;;
     fetch-labels)   echo "${cpu} --cpus-per-task=4  --mem=8G   --time=03:00:00" ;;
     resolve-scenes) echo "${cpu} --cpus-per-task=2  --mem=8G   --time=06:00:00" ;;
-    download)       echo "${cpu} --cpus-per-task=4  --mem=8G   --time=12:00:00 --array=0-$((DOWNLOAD_TASKS-1))%${DOWNLOAD_CONCURRENCY}" ;;
-    preprocess)     echo "${cpu} --cpus-per-task=8  --mem=48G  --time=10:00:00 --array=0-$((PREPROCESS_TASKS-1))%${PREPROCESS_CONCURRENCY}" ;;
+    download)       echo "${cpu} --cpus-per-task=4  --mem=8G   --time=${DOWNLOAD_TIME} --array=0-$((DOWNLOAD_TASKS-1))%${DOWNLOAD_CONCURRENCY}" ;;
+    preprocess)     echo "${cpu} --cpus-per-task=8  --mem=48G  --time=${PREPROCESS_TIME} --array=0-$((PREPROCESS_TASKS-1))%${PREPROCESS_CONCURRENCY}" ;;
     split)          echo "${cpu} --cpus-per-task=8  --mem=64G  --time=01:00:00" ;;
-    train)          echo "${gpu_train} --cpus-per-task=${TRAIN_CPUS} --mem=${TRAIN_MEM} --time=1-00:00:00 --requeue" ;;
-    evaluate)       echo "${gpu} --cpus-per-task=16 --mem=160G --time=06:00:00" ;;
-    mdl)            echo "${gpu} --cpus-per-task=16 --mem=160G --time=12:00:00 --array=0-$((MDL_TASKS-1))%${MDL_CONCURRENCY}" ;;
-    diagnose)       echo "${gpu} --cpus-per-task=8  --mem=96G  --time=02:00:00" ;;
+    train)          echo "${gpu_train} --cpus-per-task=${TRAIN_CPUS} --mem=${TRAIN_MEM} --time=${TRAIN_TIME} --requeue" ;;
+    evaluate)       echo "${gpu} --cpus-per-task=16 --mem=160G --time=${EVAL_TIME}" ;;
+    mdl)            echo "${gpu} --cpus-per-task=16 --mem=160G --time=${MDL_TIME} --array=0-$((MDL_TASKS-1))%${MDL_CONCURRENCY}" ;;
+    # CPU: `evaluate` caches its predictions (eval.save_predictions), so diagnose needs no GPU.
+    diagnose)       echo "${cpu} --cpus-per-task=8  --mem=96G  --time=${DIAGNOSE_TIME}" ;;
     baseline-lr)    echo "${cpu} --cpus-per-task=8  --mem=64G  --time=02:00:00" ;;
     mdl-fit|report) echo "${cpu} --cpus-per-task=2  --mem=8G   --time=00:30:00" ;;
     fetch-enh|mf-check|aviris-fetch) echo "${cpu} --cpus-per-task=4 --mem=32G --time=06:00:00" ;;
@@ -102,8 +113,21 @@ stage_resources() {
 # Common sbatch flags. Slurm spools the batch script under /var/spool/slurmd, so the job cannot find
 # this directory from $0; pass it explicitly. No --account: Prism resolves the caller's Grace
 # allocation, and a stale account/partition pairing makes Slurm reject otherwise valid jobs.
+# sbatch inherits SBATCH_QOS/SLURM_QOS from the submitting environment, so a chain submitted from
+# inside another job (a JupyterHub session, an salloc) carries that job's QOS onto the compute
+# partition and every stage sits in PD with reason InvalidQOS. Drop the inherited value; site.env can
+# still name one explicitly via CH4HSI_QOS.
+ch4hsi_clear_inherited_qos() {
+  [ -n "${SBATCH_QOS:-}${SLURM_QOS:-}" ] || return 0
+  echo "NOTE: dropping inherited QOS '${SBATCH_QOS:-${SLURM_QOS}}' (submitted from inside job ${SLURM_JOB_ID:-?})." >&2
+  unset SBATCH_QOS SLURM_QOS
+}
+
 sbatch_common() {
+  ch4hsi_clear_inherited_qos
   local -a a=(--parsable "--chdir=${CH4HSI_REPO}" "--export=ALL,CH4HSI_HPC_DIR=${CH4HSI_HPC_DIR},CH4HSI_REPO=${CH4HSI_REPO},CH4HSI_DATA=${CH4HSI_DATA}")
+  [ -z "${CH4HSI_QOS:-}" ]     || a+=("--qos=${CH4HSI_QOS}")
+  [ -z "${CH4HSI_ACCOUNT:-}" ] || a+=("--account=${CH4HSI_ACCOUNT}")
   [ -z "${CH4HSI_MAIL:-}" ] || a+=("--mail-user=${CH4HSI_MAIL}" --mail-type=FAIL)
   printf '%s\n' "${a[@]}"
 }
