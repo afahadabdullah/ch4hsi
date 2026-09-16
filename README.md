@@ -6,9 +6,11 @@ synthetic plume injection. Built to run end-to-end on **HPC cloud** with Slurm. 
 
 ![ch4hsi workflow](docs/figures/workflow.png)
 
-*Every box shows that stage's actual output for one scene. This version is built from **synthetic**
-EMIT-format data (no real scenes are in the repo yet) with the pixel logistic-regression baseline standing
-in for the U-Net; regenerate it from a real run with `scripts/make_readme_figures.py` (see [Figures](#figures)).*
+*Every box shows that stage's actual output for one scene. This rendering is built from **synthetic**
+EMIT-format data with the pixel logistic-regression baseline standing in for the U-Net, so the diagram is
+readable without shipping scenes in the repo; regenerate it from the real run with
+`scripts/make_readme_figures.py --run unet_v1` (see [Figures](#figures)). The [Results](#results--unet_v1-first-full-pass-on-real-emit-data)
+below are from real EMIT data.*
 
 ## Quick start on HPC cloud (x86 2× V100 or GH200 nodes)
 
@@ -29,6 +31,82 @@ tables are in [slurm/README.md](slurm/README.md).
 Results land in `$CH4HSI_DATA/runs/<run_name>/`: `REPORT.md` (tables, figures, auto-filled resume bullets),
 `metrics_test.json` (with 90% scene-bootstrap CIs), `mdl.json`, `per_scene_test.csv`, `per_plume_test.csv`,
 `figures/`, and `diagnostics/DIAGNOSTICS.md` (the full diagnostic figure suite).
+
+## Results — `unet_v1`, first full pass on real EMIT data
+
+448 EMIT scenes (300 containing catalogued plume complexes, 148 plume-free over oil & gas basins), split into
+1° geo-blocks so repeat overpasses of one facility never straddle train and test. Thresholds are frozen on
+validation and applied unchanged to the test scenes.
+
+The headline is plume-level: the U-Net detects two thirds of the labelled complexes while raising **34× fewer
+false alarms** than the matched filter tuned for the same task.
+
+<!-- ch4hsi:results:start -->
+
+| split | scenes | with plumes | plume-free | plume pixels |
+|---|---|---|---|---|
+| train | 314 | 210 | 104 | 1,858,993 |
+| val | 67 | 45 | 22 | 176,726 |
+| test | 67 | 45 | 22 | 186,615 |
+
+**Detection (plume level)**
+
+| method | plume recall | 90% CI | false alarms / 1000 km² | plume precision | scene AUROC |
+|---|---|---|---|---|---|
+| U-Net | 0.652 | 0.55–0.76 | 4.9 | 0.040 | 0.643 |
+| Matched filter (val-tuned, 900 ppm·m) | 0.826 | 0.76–0.89 | 167.6 | 0.002 | 0.440 |
+| Matched filter (fixed, 1000 ppm·m) | 0.783 | 0.71–0.86 | 138.5 | 0.003 | 0.440 |
+
+**Pixel overlap with the reviewed complex** (secondary — see the note below)
+
+| method | F1 | 90% CI | IoU | AP |
+|---|---|---|---|---|
+| U-Net | 0.121 | 0.08–0.18 | 0.064 | 0.057 |
+| Matched filter (val-tuned) | 0.005 | 0.00–0.01 | 0.003 | 0.002 |
+| Matched filter (fixed) | 0.005 | 0.00–0.01 | 0.002 | 0.002 |
+
+Plume recall counts labelled plume complexes with at least one detected pixel; false alarms are predicted
+components on plume-free scenes. Uncatalogued real plumes count as false positives, so precision is a lower bound.
+
+**Minimum detection limit** (1,200 Beer–Lambert injections into the radiance of 20 plume-free test scenes,
+U = 3 m/s): MDL50 ≈ 839 kg/h (787–885), MDL90 ≈ 1732 kg/h for the matched filter, and 2286 kg/h (2153–2455) /
+5484 kg/h for the U-Net. Median column noise-equivalent σ = 627 ppm·m; the analytic 3σ / 9-pixel limit is
+≈ 2616 kg/h.
+
+**Label / imagery check** (40 test scenes, `scripts/check_label_alignment.py`): the labels carry a median
+enhancement of 334 ppm·m above their scene background, the mask×MF correlation peaks at zero shift in 80 % of
+scenes, and the per-pixel SNR is 0.9σ against a background scatter of 428 ppm·m. Labels and imagery agree;
+single pixels simply sit at the noise floor, which is what bounds the pixel overlap above.
+
+*Regenerate this block, with figures and the full report, by running
+`python scripts/publish_results.py --run unet_v1 -c configs/x86_v100.yaml` after a run.*
+
+<!-- ch4hsi:results:end -->
+
+### How to read this
+
+- **Plume level is the meaningful frame.** A 60 m EMIT pixel inside a catalogued complex carries a median
+  enhancement of ~330 ppm·m against ~430 ppm·m of background scatter — under 1σ. Individual pixels are therefore
+  not separable, and detection has to come from pooling: a coherent *N*-pixel plume gives roughly √N σ. Pixel IoU
+  against a hand-drawn complex boundary is reported for completeness, not as the objective.
+- **The false-alarm column is the comparison that matters.** The matched filter reaches higher recall only by
+  thresholding at ~1.4σ, which flags something on essentially every scene (167 spurious components per
+  1000 km² on plume-free scenes). The U-Net gets to 0.65 recall at 4.9 — a usable operating point.
+- **The MDL gap between the two is a training-distribution artefact.** `train.synth_aug` was off for this run, so
+  the U-Net only ever saw large reviewed complexes, while the MDL stage tests thin injected plumes. The matched
+  filter's 839 kg/h is the physics baseline; the U-Net's 2286 kg/h says it is out of distribution on those
+  injections, not that it is less sensitive in general.
+
+### Open items
+
+1. **Post-processing sweep** — `scripts/detection_sweep.py` measures what smoothing scale, minimum component size
+   and per-scene z-scoring buy, straight off the stored MF maps (no retraining). The current settings (σ = 1 px,
+   4-pixel minimum) are the least favourable corner of that grid.
+2. **`train.synth_aug.enabled=true` rerun** — puts physically-consistent small plumes into training, which is
+   exactly the distribution the MDL stage probes.
+3. **`ch4hsi mf-check`** — correlates our matched filter against the operational EMIT L2B CH4ENH on the same
+   scenes. It decides whether σ itself can come down (our retrieval) or whether 430 ppm·m is what EMIT gives at
+   60 m (the scene).
 
 ## Stages (`python -m ch4hsi <stage> --config ... --set key=value`)
 
@@ -55,7 +133,9 @@ Useful overrides: `--set run_name=unet_synth --set train.synth_aug.enabled=true`
 
 ## Figures
 
-All figures below come from `python scripts/make_readme_figures.py` and are **synthetic**: 24 EMIT-like scenes
+The figures in this section illustrate the *method*; the measured results are in
+[Results](#results--unet_v1-first-full-pass-on-real-emit-data). They come from
+`python scripts/make_readme_figures.py` and are **synthetic**: 24 EMIT-like scenes
 (285 bands, Gaussian plumes injected with Beer–Lambert, rotated GLT, footprints over real oil & gas regions) pushed
 through the real `preprocess → split → evaluate → diagnose` code. Numbers on them are not results. The model panels
 show the pixel logistic-regression baseline because torch was not available where they were made; with torch
@@ -115,6 +195,9 @@ pytest -q tests        # physics (MF recovers injected ppm·m, GLT, plume mass c
 - Labels are the EMIT team's reviewed plume complexes: the model learns that delineation, and uncatalogued real plumes
   count as false positives (precision is a lower bound; plume-free scenes give a clean false-alarm rate).
 - MDL depends on the assumed wind speed (default 3 m/s) and the idealised plume model; report it with those assumptions.
+- At 60 m resolution a single pixel inside a catalogued complex sits below 1σ of the matched-filter background
+  (measured: 334 ppm·m excess vs 428 ppm·m scatter). Pixel-level precision/recall/IoU are bounded by that noise
+  floor regardless of the model; plume-level recall at a stated false-alarm rate is the metric that survives it.
 - The CH4 absorption LUT is taken from the `mag1c` package (BSD-3, Foote et al. 2020).
 
 ## References

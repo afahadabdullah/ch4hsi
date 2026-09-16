@@ -49,12 +49,19 @@ def smooth(x, valid, sigma):
     return np.where(valid, out, 0).astype(np.float32)
 
 
-def scene_scores(d: Path, sigmas, normalise: str):
-    """Score maps for one scene, one per smoothing scale."""
-    mf = np.nan_to_num(np.load(d / "mf.npy"), nan=0.0).astype(np.float32)
+def scene_scores(d: Path, sigmas, normalise: str, pred_dir: Path | None = None):
+    """Score maps for one scene, one per smoothing scale. `pred_dir` switches the source to the
+    model probabilities cached by `evaluate` (runs/<run>/preds/<scene>.npy)."""
     valid = np.load(d / "valid.npy")
     mask = (np.load(d / "mask.npy") > 0) & valid
     ids = np.load(d / "plume_id.npy") if (d / "plume_id.npy").exists() else mask.astype(np.int16)
+    if pred_dir is not None:
+        p = pred_dir / f"{d.name}.npy"
+        if not p.exists():
+            return None
+        mf = np.nan_to_num(np.load(p), nan=0.0).astype(np.float32)
+    else:
+        mf = np.nan_to_num(np.load(d / "mf.npy"), nan=0.0).astype(np.float32)
     if normalise == "zscore":
         bg = mf[valid & ~mask]
         med = float(np.median(bg)) if bg.size else 0.0
@@ -98,6 +105,9 @@ def main(argv=None):
     ap.add_argument("--smooth", type=float, nargs="*", default=[0, 1, 2, 4, 8], help="Gaussian σ in pixels")
     ap.add_argument("--min-sizes", type=int, nargs="*", default=[4, 16, 64])
     ap.add_argument("--normalise", nargs="*", default=["raw", "zscore"], choices=["raw", "zscore"])
+    ap.add_argument("--score", default="mf", choices=["mf", "model"],
+                    help="mf = stored matched-filter map; model = cached probabilities from `evaluate`")
+    ap.add_argument("--run", default=None, help="run name holding preds/ (required for --score model)")
     ap.add_argument("--n-thresholds", type=int, default=12)
     ap.add_argument("--out", default=None)
     a = ap.parse_args(argv)
@@ -107,10 +117,19 @@ def main(argv=None):
     sp = Path(cfg.paths.splits) / "splits.json"
     ids_all = (sum(load_json(sp)["splits"].values(), []) if a.split == "all" else load_json(sp)["splits"][a.split]) \
         if sp.exists() else sorted(p.parent.name for p in scene_dir.glob("*/meta.json"))
-    dirs = [scene_dir / s for s in ids_all if (scene_dir / s / "mf.npy").exists()][: a.scenes]
+    pred_dir = None
+    if a.score == "model":
+        if not a.run:
+            raise SystemExit("--score model needs --run <run_name>")
+        pred_dir = Path(cfg.paths.runs) / a.run / "preds"
+        if not pred_dir.exists():
+            raise SystemExit(f"{pred_dir} not found — `evaluate` writes it when eval.save_predictions is true")
+    dirs = [scene_dir / s for s in ids_all if (scene_dir / s / "mf.npy").exists()
+            and (pred_dir is None or (pred_dir / s / "").parent.joinpath(f"{s}.npy").exists())][: a.scenes]
     if not dirs:
         raise SystemExit(f"no preprocessed scenes for split {a.split} under {scene_dir}")
-    log.info("%d scenes | smoothing %s | min sizes %s | %s", len(dirs), a.smooth, a.min_sizes, a.normalise)
+    log.info("%d scenes | score %s | smoothing %s | min sizes %s | %s", len(dirs), a.score, a.smooth, a.min_sizes,
+             a.normalise)
 
     out_rows = []
     for norm in a.normalise:
@@ -119,7 +138,10 @@ def main(argv=None):
         rng = np.random.default_rng(0)
         pool = {s: [] for s in a.smooth}
         for d in dirs[: min(6, len(dirs))]:
-            sc, valid, _, _ = scene_scores(d, a.smooth, norm)
+            got = scene_scores(d, a.smooth, norm, pred_dir)
+            if got is None:
+                continue
+            sc, valid, _, _ = got
             for s, score in sc.items():
                 v = score[valid]
                 pool[s].append(rng.choice(v, size=min(50000, v.size), replace=False))
@@ -129,7 +151,10 @@ def main(argv=None):
             log.info("[%s σ=%g] thresholds %s", norm, s, np.round(thr[s], 2).tolist())
         for i, d in enumerate(dirs, 1):
             meta = load_json(d / "meta.json")
-            sc, valid, mask, ids = scene_scores(d, a.smooth, norm)
+            got = scene_scores(d, a.smooth, norm, pred_dir)
+            if got is None:
+                continue
+            sc, valid, mask, ids = got
             for s, score in sc.items():
                 for r in evaluate(score, valid, mask, ids, thr[s], a.min_sizes):
                     r.update(normalise=norm, smooth_px=s, scene_id=meta["scene_id"], role=meta["role"])
@@ -149,12 +174,13 @@ def main(argv=None):
     g["pixel_iou"] = g.tp / (g.tp + g.fp + g.fn).clip(lower=1)
     g["fa_per_1000km2"] = 1000 * g.fa_components / (g.neg_px * PIXEL_KM2).clip(lower=1e-9)
 
-    out = Path(a.out) if a.out else scene_dir.parent / "detection_sweep"
+    out = Path(a.out) if a.out else scene_dir.parent / f"detection_sweep_{a.score}"
     g.to_csv(out.with_suffix(".csv"), index=False)
-    _plot(g, out.with_suffix(".png"), a.split, len(dirs))
+    _plot(g, out.with_suffix(".png"), a.split, len(dirs), a.score)
 
     # the operating point each configuration can reach at a tolerable false-alarm rate
-    log.info("best plume recall at <= 1 false alarm per 1000 km² (current config = raw, σ=1, min 4 px):")
+    log.info("best plume recall at <= 1 false alarm per 1000 km² (current config: raw, σ=%s, min 4 px):",
+             "1" if a.score == "mf" else "0")
     ok = g[g.fa_per_1000km2 <= 1.0]
     for (norm, s, ms), sub in ok.groupby(["normalise", "smooth_px", "min_size"]):
         b = sub.loc[sub.plume_recall.idxmax()]
@@ -164,7 +190,7 @@ def main(argv=None):
     return 0
 
 
-def _plot(g, path, split, n_scenes):
+def _plot(g, path, split, n_scenes, score="mf"):
     plt = P.apply_style()
     fig, axs = plt.subplots(1, 3, figsize=(14, 4.2))
     smooths = sorted(g.smooth_px.unique())
@@ -181,7 +207,7 @@ def _plot(g, path, split, n_scenes):
                     label=f"σ = {s:g} px")
         ax.set_xscale("log")
         ax.set(xlabel="false alarms per 1000 km² (plume-free scenes)", ylabel="plume recall", ylim=(-0.02, 1.02),
-               title=f"{'MF, ppm·m' if norm == 'raw' else 'MF, per-scene z-score'} (min {best_ms} px)")
+               title=f"{'raw score' if norm == 'raw' else 'per-scene z-score'} (min {best_ms} px)")
         ax.legend(ncol=2)
     for s, c in zip(smooths, colors):
         for norm, ls in (("raw", "-"), ("zscore", "--")):
@@ -193,7 +219,8 @@ def _plot(g, path, split, n_scenes):
     axs[2].set_xscale("log")
     axs[2].set(xlabel="minimum component size (pixels)", ylabel="best pixel F1", title="Pixel F1 vs size filter")
     axs[2].legend(fontsize=6.5, ncol=2)
-    fig.suptitle(f"Detection post-processing sweep — {n_scenes} {split} scenes, matched-filter map only",
+    fig.suptitle(f"Detection post-processing sweep — {n_scenes} {split} scenes, "
+                 f"{'matched-filter map' if score == 'mf' else 'model probabilities'}",
                  x=0.01, ha="left", fontsize=11, weight="semibold")
     fig.tight_layout()
     fig.savefig(path, dpi=150)
