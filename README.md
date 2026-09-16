@@ -43,43 +43,34 @@ false alarms** than the matched filter tuned for the same task.
 
 <!-- ch4hsi:results:start -->
 
+## Results
+
+Run `unet_v1` on EMIT L1B radiance with EMIT L2B plume-complex labels; thresholds frozen on the validation scenes, metrics on geographically held-out test scenes (67 scenes).
+
 | split | scenes | with plumes | plume-free | plume pixels |
 |---|---|---|---|---|
 | train | 314 | 210 | 104 | 1,858,993 |
 | val | 67 | 45 | 22 | 176,726 |
 | test | 67 | 45 | 22 | 186,615 |
 
-**Detection (plume level)**
+| method | pixel F1 | 90% CI | IoU | AP | plume recall | 90% CI | plume precision | scene AUROC | FA / 1000 km² |
+|---|---|---|---|---|---|---|---|---|---|
+| U-Net | 0.121 | 0.08–0.18 | 0.064 | 0.057 | 0.652 | 0.55–0.76 | 0.040 | 0.643 | 4.93 |
+| Matched filter (val-tuned) | 0.005 | 0.00–0.01 | 0.003 | 0.002 | 0.826 | 0.76–0.89 | 0.002 | 0.440 | 167.61 |
+| Matched filter (1000 ppm·m) | 0.005 | 0.00–0.01 | 0.002 | 0.002 | 0.783 | 0.71–0.86 | 0.003 | 0.440 | 138.45 |
 
-| method | plume recall | 90% CI | false alarms / 1000 km² | plume precision | scene AUROC |
-|---|---|---|---|---|---|
-| U-Net | 0.652 | 0.55–0.76 | 4.9 | 0.040 | 0.643 |
-| Matched filter (val-tuned, 900 ppm·m) | 0.826 | 0.76–0.89 | 167.6 | 0.002 | 0.440 |
-| Matched filter (fixed, 1000 ppm·m) | 0.783 | 0.71–0.86 | 138.5 | 0.003 | 0.440 |
+Plume recall counts labelled plume complexes with at least one detected pixel; false alarms are predicted components on plume-free scenes. Uncatalogued real plumes count as false positives, so precision is a lower bound.
 
-**Pixel overlap with the reviewed complex** (secondary — see the note below)
+**Minimum detection limit** (1,200 synthetic injections into the radiance of 20 plume-free test scenes, U = 3.0 m/s): MDL50 ≈ 2286 kg/h (2153–2455), MDL90 ≈ 5484 kg/h for U-Net, vs 839 kg/h (MDL50) for the matched filter. Median column noise-equivalent σ = 627 ppm·m.
 
-| method | F1 | 90% CI | IoU | AP |
-|---|---|---|---|---|
-| U-Net | 0.121 | 0.08–0.18 | 0.064 | 0.057 |
-| Matched filter (val-tuned) | 0.005 | 0.00–0.01 | 0.003 | 0.002 |
-| Matched filter (fixed) | 0.005 | 0.00–0.01 | 0.002 | 0.002 |
+Full report: [docs/results/unet_v1/REPORT.md](docs/results/unet_v1/REPORT.md) · diagnostics: [docs/results/unet_v1/DIAGNOSTICS.md](docs/results/unet_v1/DIAGNOSTICS.md)
 
-Plume recall counts labelled plume complexes with at least one detected pixel; false alarms are predicted
-components on plume-free scenes. Uncatalogued real plumes count as false positives, so precision is a lower bound.
-
-**Minimum detection limit** (1,200 Beer–Lambert injections into the radiance of 20 plume-free test scenes,
-U = 3 m/s): MDL50 ≈ 839 kg/h (787–885), MDL90 ≈ 1732 kg/h for the matched filter, and 2286 kg/h (2153–2455) /
-5484 kg/h for the U-Net. Median column noise-equivalent σ = 627 ppm·m; the analytic 3σ / 9-pixel limit is
-≈ 2616 kg/h.
-
-**Label / imagery check** (40 test scenes, `scripts/check_label_alignment.py`): the labels carry a median
-enhancement of 334 ppm·m above their scene background, the mask×MF correlation peaks at zero shift in 80 % of
-scenes, and the per-pixel SNR is 0.9σ against a background scatter of 428 ppm·m. Labels and imagery agree;
-single pixels simply sit at the noise floor, which is what bounds the pixel overlap above.
-
-*Regenerate this block, with figures and the full report, by running
-`python scripts/publish_results.py --run unet_v1 -c configs/x86_v100.yaml` after a run.*
+![02_threshold_sweep](docs/results/unet_v1/diagnostics/02_threshold_sweep.png)
+![03_roc](docs/results/unet_v1/diagnostics/03_roc.png)
+![06_per_scene_iou](docs/results/unet_v1/diagnostics/06_per_scene_iou.png)
+![07_plume_detection](docs/results/unet_v1/diagnostics/07_plume_detection.png)
+![08_false_alarms](docs/results/unet_v1/diagnostics/08_false_alarms.png)
+![11_mdl](docs/results/unet_v1/diagnostics/11_mdl.png)
 
 <!-- ch4hsi:results:end -->
 
